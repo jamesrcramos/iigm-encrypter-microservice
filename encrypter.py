@@ -1,6 +1,8 @@
-from flask import Flask, request, send_file, jsonify
+from flask import Flask, request, send_file, jsonify, after_this_request
 from cryptography.fernet import Fernet
 import os
+
+import traceback
 
 
 app = Flask(__name__)
@@ -28,22 +30,29 @@ def encrypt_file():
         with open(encrypted_file_path, 'wb') as encrypted_file:
             encrypted_file.write(encrypted_content)
 
-        # Send the encrypted file and the key as a response
+        # Prepare a function to run after sending the file to delete it
+        @after_this_request
+        def remove_file(response):
+            try:
+                os.remove(encrypted_file_path)
+            except Exception as e:
+                app.logger.error("Error removing the encrypted file", exc_info=e)
+            return response
+        
+        # Set the custom header with the encryption key
         response = send_file(
             encrypted_file_path,
             as_attachment=True,
-            attachment_filename='encrypted_file.txt'
+            download_name='encrypted_file.txt',
+            mimetype='text/plain'
         )
-
-        # Set the key in a custom header
         response.headers['Encryption-Key'] = key.decode('utf-8')
-
-        # Remove the encrypted file after sending it
-        os.remove(encrypted_file_path)
-
         return response
 
     except Exception as e:
+        # Log the full exception traceback to the console
+        tb = traceback.format_exc()
+        print(tb)
         return jsonify(error=str(e)), 500
 
 
